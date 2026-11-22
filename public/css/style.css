@@ -1,0 +1,53 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #172b3a;
+  background: #f3f6f8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.site-header {
+  padding: 1.5rem max(1.5rem, calc((100% - 72rem) / 2));
+  color: #fff;
+  background: #123b5d;
+}
+
+.site-header h1 {
+  margin: 0;
+}
+
+.site-header p {
+  margin: 0.4rem 0 0;
+  color: #d7e8f4;
+}
+
+main {
+  width: min(72rem, calc(100% - 3rem));
+  margin: 2rem auto;
+}
+
+.map-panel {
+  display: grid;
+  min-height: 24rem;
+  place-content: center;
+  padding: 2rem;
+  border: 1px solid #d5e0e7;
+  border-radius: 0.75rem;
+  background: #fff;
+  text-align: center;
+}
+
+.map-panel h2 {
+  margin: 0;
+}
+
+#connection-status {
+  color: #526675;
+}
