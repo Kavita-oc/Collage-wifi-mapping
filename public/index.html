@@ -6,19 +6,60 @@
     <meta name="theme-color" content="#123b5d" />
     <title>REVA WiFi Mapping</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/dashboard.css" />
+    <link rel="stylesheet" href="/css/analytics.css" />
   </head>
   <body>
     <header class="site-header">
-      <h1>REVA WiFi Mapping</h1>
-      <p>Campus wireless coverage overview</p>
+      <div class="header-inner">
+        <div>
+          <h1>REVA WiFi Mapping</h1>
+          <p>Campus wireless coverage overview</p>
+        </div>
+        <p id="connection-status" class="status-pill" role="status">Checking server…</p>
+      </div>
+      <nav class="main-nav" aria-label="Main">
+        <button data-view="dashboard" class="active">Dashboard</button>
+        <button data-view="locations">Locations</button>
+        <button data-view="accessPoints">Access Points</button>
+        <button data-view="users">Users</button>
+        <button data-view="readings">Readings</button>
+        <button data-view="reports">Reports</button>
+      </nav>
     </header>
+
     <main>
-      <section class="map-panel" aria-labelledby="map-title">
-        <h2 id="map-title">Campus map</h2>
-        <p>The interactive coverage map will appear here.</p>
-      </section>
-      <p id="connection-status" role="status">Checking server status…</p>
+      <section id="view-dashboard" class="view active"></section>
+      <section id="view-locations" class="view"></section>
+      <section id="view-accessPoints" class="view"></section>
+      <section id="view-users" class="view"></section>
+      <section id="view-readings" class="view"></section>
+      <section id="view-reports" class="view"></section>
     </main>
+
+    <!-- Shared add / edit dialog -->
+    <dialog id="form-dialog">
+      <form>
+        <h3></h3>
+        <div class="form-fields"></div>
+        <p class="form-error" role="alert"></p>
+        <div class="form-actions">
+          <button type="button" class="btn" data-cancel>Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast-container" aria-live="polite"></div>
+
+    <!-- Order matters: api.js first, script.js last -->
+    <script src="/js/api.js" defer></script>
+    <script src="/js/dashboard.js" defer></script>
+    <script src="/js/locations.js" defer></script>
+    <script src="/js/accessPoints.js" defer></script>
+    <script src="/js/users.js" defer></script>
+    <script src="/js/readings.js" defer></script>
+    <script src="/js/reports.js" defer></script>
     <script src="/js/script.js" defer></script>
   </body>
 </html>
