@@ -1,10 +1,40 @@
-
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
+const {
+    insertWithNextId,
+    invalidIdResponse,
+    isNumberInRange,
+    isPositiveInteger,
+    isValidMySqlDateTime,
+    sendDatabaseError
+} = require("./helpers");
 
-// VIEW all Wi-Fi readings
-router.get("/", async (req, res) => {
+function validReading(body) {
+    return isPositiveInteger(body.ap_id) &&
+        isPositiveInteger(body.user_id) &&
+        isPositiveInteger(body.time_slot_id) &&
+        isNumberInRange(body.signal_dbm, -100, 0) &&
+        isNumberInRange(body.download_mbps, 0, 999999.99) &&
+        isNumberInRange(body.upload_mbps, 0, 999999.99) &&
+        isNumberInRange(body.ping_ms, 0, 999999.99) &&
+        isValidMySqlDateTime(body.measured_at);
+}
+
+function readingValues(body) {
+    return [
+        Number(body.ap_id),
+        Number(body.user_id),
+        Number(body.time_slot_id),
+        Number(body.signal_dbm),
+        Number(body.download_mbps),
+        Number(body.upload_mbps),
+        Number(body.ping_ms),
+        body.measured_at
+    ];
+}
+
+router.get("/", async (_req, res) => {
     try {
         const [rows] = await pool.query(`
             SELECT
@@ -20,30 +50,26 @@ router.get("/", async (req, res) => {
             JOIN time_slots t ON w.time_slot_id = t.time_slot_id
             ORDER BY w.reading_id
         `);
-
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "List Wi-Fi readings");
     }
 });
 
-// SQL QUERY 2: Complete Wi-Fi reading details using VIEW
-router.get("/details", async (req, res) => {
+router.get("/details", async (_req, res) => {
     try {
         const [rows] = await pool.query(`
             SELECT *
             FROM vw_wifi_reading_details
             ORDER BY measured_at
         `);
-
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "List Wi-Fi reading details");
     }
 });
 
-// SQL QUERY 7: Classify signal quality
-router.get("/signal-quality", async (req, res) => {
+router.get("/signal-quality", async (_req, res) => {
     try {
         const [rows] = await pool.query(`
             SELECT
@@ -65,187 +91,85 @@ router.get("/signal-quality", async (req, res) => {
             JOIN locations l ON a.location_id = l.location_id
             ORDER BY w.signal_dbm DESC
         `);
-
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Classify Wi-Fi signal quality");
     }
 });
 
-// ADD a Wi-Fi reading
 router.post("/", async (req, res) => {
+    const body = req.body || {};
+    if (!validReading(body)) {
+        return res.status(400).json({
+            success: false,
+            message: "Provide positive access-point, user, and time-slot IDs; signal from -100 to 0 dBm; non-negative measurements with at most two decimal places; and a valid date/time."
+        });
+    }
+
     try {
-        const {
-            ap_id, user_id, time_slot_id,
-            signal_dbm, download_mbps,
-            upload_mbps, ping_ms, measured_at
-        } = req.body;
-
-        if (
-            ap_id == null || user_id == null || time_slot_id == null ||
-            signal_dbm == null || download_mbps == null ||
-            upload_mbps == null || ping_ms == null || !measured_at
-        ) {
-            return res.status(400).json({
-                success: false,
-                message: "All Wi-Fi reading fields are required."
-            });
-        }
-
-        const numbers = [
-            ap_id, user_id, time_slot_id,
-            signal_dbm, download_mbps, upload_mbps, ping_ms
-        ];
-
-        if (numbers.some(value => !Number.isFinite(Number(value)))) {
-            return res.status(400).json({
-                success: false,
-                message: "All IDs and measurement values must be numeric."
-            });
-        }
-
-        if (
-            Number(ap_id) <= 0 || Number(user_id) <= 0 ||
-            Number(time_slot_id) <= 0 ||
-            Number(signal_dbm) < -100 || Number(signal_dbm) > 0 ||
-            Number(download_mbps) < 0 ||
-            Number(upload_mbps) < 0 || Number(ping_ms) < 0
-        ) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid IDs or Wi-Fi measurement values."
-            });
-        }
-
-        const [[row]] = await pool.query(
-            "SELECT COALESCE(MAX(reading_id), 0) + 1 AS nextId FROM wifi_readings"
+        const readingId = await insertWithNextId(pool, "readings", (connection, nextId) =>
+            connection.execute(
+                `INSERT INTO wifi_readings
+                 (reading_id, ap_id, user_id, time_slot_id, signal_dbm,
+                  download_mbps, upload_mbps, ping_ms, measured_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [nextId, ...readingValues(body)]
+            )
         );
-
-        const nextId = row.nextId;
-
-        await pool.execute(
-            `INSERT INTO wifi_readings
-             (reading_id, ap_id, user_id, time_slot_id,
-              signal_dbm, download_mbps, upload_mbps, ping_ms, measured_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                nextId, ap_id, user_id, time_slot_id,
-                signal_dbm, download_mbps, upload_mbps,
-                ping_ms, measured_at
-            ]
-        );
-
         res.status(201).json({
             success: true,
             message: "Wi-Fi reading added successfully.",
-            reading_id: nextId
+            reading_id: readingId
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Add Wi-Fi reading");
     }
 });
 
-// UPDATE a Wi-Fi reading
 router.put("/:id", async (req, res) => {
+    if (!isPositiveInteger(req.params.id)) return invalidIdResponse(res);
+    const body = req.body || {};
+    if (!validReading(body)) {
+        return res.status(400).json({
+            success: false,
+            message: "Provide positive access-point, user, and time-slot IDs; signal from -100 to 0 dBm; non-negative measurements with at most two decimal places; and a valid date/time."
+        });
+    }
+
     try {
-        const {
-            ap_id, user_id, time_slot_id,
-            signal_dbm, download_mbps,
-            upload_mbps, ping_ms, measured_at
-        } = req.body;
-
-        if (
-            ap_id == null || user_id == null || time_slot_id == null ||
-            signal_dbm == null || download_mbps == null ||
-            upload_mbps == null || ping_ms == null || !measured_at
-        ) {
-            return res.status(400).json({
-                success: false,
-                message: "All Wi-Fi reading fields are required."
-            });
-        }
-
-        const numbers = [
-            ap_id, user_id, time_slot_id,
-            signal_dbm, download_mbps, upload_mbps, ping_ms
-        ];
-
-        if (numbers.some(value => !Number.isFinite(Number(value)))) {
-            return res.status(400).json({
-                success: false,
-                message: "All IDs and measurement values must be numeric."
-            });
-        }
-
-        if (
-            Number(ap_id) <= 0 || Number(user_id) <= 0 ||
-            Number(time_slot_id) <= 0 ||
-            Number(signal_dbm) < -100 || Number(signal_dbm) > 0 ||
-            Number(download_mbps) < 0 ||
-            Number(upload_mbps) < 0 || Number(ping_ms) < 0
-        ) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid IDs or Wi-Fi measurement values."
-            });
-        }
-
         const [existing] = await pool.execute(
             "SELECT reading_id FROM wifi_readings WHERE reading_id = ?",
-            [req.params.id]
+            [Number(req.params.id)]
         );
-
         if (existing.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Wi-Fi reading not found."
-            });
+            return res.status(404).json({ success: false, message: "Wi-Fi reading not found." });
         }
-
         await pool.execute(
             `UPDATE wifi_readings
-             SET ap_id = ?, user_id = ?, time_slot_id = ?,
-                 signal_dbm = ?, download_mbps = ?,
-                 upload_mbps = ?, ping_ms = ?, measured_at = ?
+             SET ap_id = ?, user_id = ?, time_slot_id = ?, signal_dbm = ?,
+                 download_mbps = ?, upload_mbps = ?, ping_ms = ?, measured_at = ?
              WHERE reading_id = ?`,
-            [
-                ap_id, user_id, time_slot_id,
-                signal_dbm, download_mbps,
-                upload_mbps, ping_ms, measured_at,
-                req.params.id
-            ]
+            [...readingValues(body), Number(req.params.id)]
         );
-
-        res.json({
-            success: true,
-            message: "Wi-Fi reading updated successfully."
-        });
+        res.json({ success: true, message: "Wi-Fi reading updated successfully." });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Update Wi-Fi reading");
     }
 });
 
-// DELETE a Wi-Fi reading
 router.delete("/:id", async (req, res) => {
+    if (!isPositiveInteger(req.params.id)) return invalidIdResponse(res);
     try {
         const [result] = await pool.execute(
             "DELETE FROM wifi_readings WHERE reading_id = ?",
-            [req.params.id]
+            [Number(req.params.id)]
         );
-
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Wi-Fi reading not found."
-            });
+            return res.status(404).json({ success: false, message: "Wi-Fi reading not found." });
         }
-
-        res.json({
-            success: true,
-            message: "Wi-Fi reading deleted successfully."
-        });
+        res.json({ success: true, message: "Wi-Fi reading deleted successfully." });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Delete Wi-Fi reading");
     }
 });
 

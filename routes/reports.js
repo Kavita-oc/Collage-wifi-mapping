@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
+const { sendDatabaseError } = require("./helpers");
 
 // 1. Dashboard summary
 router.get("/summary", async (req, res) => {
@@ -21,7 +22,7 @@ router.get("/summary", async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Load dashboard summary");
     }
 });
 
@@ -39,9 +40,9 @@ router.get("/location-summary", async (req, res) => {
             ORDER BY average_signal DESC
         `);
 
-        res.json({ success: true, data: rows });
+        res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate location summary");
     }
 });
 
@@ -61,7 +62,7 @@ router.get("/weak-signals", async (req, res) => {
 
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate weak-signal report");
     }
 });
 
@@ -69,7 +70,7 @@ router.get("/weak-signals", async (req, res) => {
 router.get("/ap-performance", async (req, res) => {
     try {
         const [rows] = await pool.query(`
-            SELECT a.ap_code, l.location_name,
+            SELECT a.ap_code, a.network_label, l.location_name,
                    COUNT(w.reading_id) AS total_readings,
                    ROUND(AVG(w.signal_dbm), 2) AS average_signal,
                    ROUND(AVG(w.download_mbps), 2) AS average_download,
@@ -77,13 +78,13 @@ router.get("/ap-performance", async (req, res) => {
             FROM access_points a
             JOIN locations l ON a.location_id = l.location_id
             JOIN wifi_readings w ON a.ap_id = w.ap_id
-            GROUP BY a.ap_id, a.ap_code, l.location_name
+            GROUP BY a.ap_id, a.ap_code, a.network_label, l.location_name
             ORDER BY average_signal DESC
         `);
 
-        res.json({ success: true, data: rows });
+        res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate access-point performance report");
     }
 });
 
@@ -102,7 +103,7 @@ router.get("/location-activity", async (req, res) => {
 
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate location activity report");
     }
 });
 
@@ -121,7 +122,7 @@ router.get("/role-activity", async (req, res) => {
 
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate role activity report");
     }
 });
 
@@ -140,7 +141,7 @@ router.get("/time-slot-activity", async (req, res) => {
 
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate time-slot activity report");
     }
 });
 
@@ -160,7 +161,7 @@ router.get("/location-speeds", async (req, res) => {
 
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate location speed report");
     }
 });
 
@@ -180,7 +181,7 @@ router.get("/high-latency", async (req, res) => {
 
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate high-latency report");
     }
 });
 
@@ -204,7 +205,7 @@ router.get("/below-average-speed", async (req, res) => {
 
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Generate below-average speed report");
     }
 });
 

@@ -1,119 +1,110 @@
-
 const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
+const {
+    insertWithNextId,
+    invalidIdResponse,
+    isNonEmptyString,
+    isOneOf,
+    isOptionalString,
+    isPositiveInteger,
+    sendDatabaseError
+} = require("./helpers");
 
-// VIEW all locations
-router.get("/", async (req, res) => {
+const AREA_TYPES = ["Academic", "Administrative", "Residential", "Student Facility", "Auditorium"];
+
+function validLocation(body) {
+    return isNonEmptyString(body.location_name, 100) &&
+        isOptionalString(body.building_block, 100) &&
+        isOneOf(body.area_type, AREA_TYPES);
+}
+
+function locationValues(body) {
+    const buildingBlock = typeof body.building_block === "string"
+        ? body.building_block.trim() || null
+        : null;
+    return [body.location_name.trim(), buildingBlock, body.area_type];
+}
+
+router.get("/", async (_req, res) => {
     try {
-        const [rows] = await pool.query(
-            "SELECT * FROM locations ORDER BY location_id"
-        );
-
+        const [rows] = await pool.query("SELECT * FROM locations ORDER BY location_id");
         res.json({ success: true, total: rows.length, data: rows });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "List locations");
     }
 });
 
-
-// ADD a location
 router.post("/", async (req, res) => {
+    const body = req.body || {};
+    if (!validLocation(body)) {
+        return res.status(400).json({
+            success: false,
+            message: "Provide a location name (up to 100 characters), optional building block, and valid area type."
+        });
+    }
+
     try {
-        const { location_name, building_block, area_type } = req.body;
-
-        if (!location_name || !area_type) {
-            return res.status(400).json({
-                success: false,
-                message: "Location name and area type are required."
-            });
-        }
-
-        // Generate the next location ID
-        const [[row]] = await pool.query(
-            "SELECT COALESCE(MAX(location_id), 0) + 1 AS nextId FROM locations"
+        const locationId = await insertWithNextId(pool, "locations", (connection, nextId) =>
+            connection.execute(
+                `INSERT INTO locations (location_id, location_name, building_block, area_type)
+                 VALUES (?, ?, ?, ?)`,
+                [nextId, ...locationValues(body)]
+            )
         );
-
-        const nextId = row.nextId;
-
-        const [result] = await pool.execute(
-            `INSERT INTO locations
-             (location_id, location_name, building_block, area_type)
-             VALUES (?, ?, ?, ?)`,
-            [nextId, location_name, building_block || null, area_type]
-        );
-
         res.status(201).json({
             success: true,
             message: "Location added successfully.",
-            location_id: nextId
+            location_id: locationId
         });
-
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: error.message
-        });
+        sendDatabaseError(res, error, "Add location");
     }
 });
 
-// UPDATE a location
 router.put("/:id", async (req, res) => {
+    if (!isPositiveInteger(req.params.id)) return invalidIdResponse(res);
+    const body = req.body || {};
+    if (!validLocation(body)) {
+        return res.status(400).json({
+            success: false,
+            message: "Provide a location name (up to 100 characters), optional building block, and valid area type."
+        });
+    }
+
     try {
-        const { location_name, building_block, area_type } = req.body;
-
-        if (!location_name || !area_type) {
-            return res.status(400).json({
-                success: false,
-                message: "Location name and area type are required."
-            });
+        const [existing] = await pool.execute(
+            "SELECT location_id FROM locations WHERE location_id = ?",
+            [Number(req.params.id)]
+        );
+        if (existing.length === 0) {
+            return res.status(404).json({ success: false, message: "Location not found." });
         }
-
-        const [result] = await pool.execute(
+        await pool.execute(
             `UPDATE locations
              SET location_name = ?, building_block = ?, area_type = ?
              WHERE location_id = ?`,
-            [location_name, building_block || null, area_type, req.params.id]
+            [...locationValues(body), Number(req.params.id)]
         );
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Location not found."
-            });
-        }
-
         res.json({ success: true, message: "Location updated successfully." });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Update location");
     }
 });
 
-// DELETE a location
 router.delete("/:id", async (req, res) => {
+    if (!isPositiveInteger(req.params.id)) return invalidIdResponse(res);
     try {
         const [result] = await pool.execute(
             "DELETE FROM locations WHERE location_id = ?",
-            [req.params.id]
+            [Number(req.params.id)]
         );
-
         if (result.affectedRows === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Location not found."
-            });
+            return res.status(404).json({ success: false, message: "Location not found." });
         }
-
         res.json({ success: true, message: "Location deleted successfully." });
     } catch (error) {
-        if (error.code === "ER_ROW_IS_REFERENCED_2") {
-            return res.status(409).json({
-                success: false,
-                message: "Cannot delete this location because access points are linked to it."
-            });
-        }
-
-        res.status(500).json({ success: false, message: error.message });
+        sendDatabaseError(res, error, "Delete location");
     }
 });
 

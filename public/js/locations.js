@@ -4,11 +4,13 @@ const AREA_TYPES = ["Academic", "Administrative", "Residential", "Student Facili
 const Locations = createCrudView({
   root: "#view-locations",
   title: "Locations",
-  subtitle: "Campus areas and blocks",
+  subtitle: "Manage campus areas and building blocks.",
   singular: "Location",
   endpoint: "/api/locations",
   idKey: "location_id",
   load: () => api.get("/api/locations"),
+  searchPlaceholder: "Search locations…",
+  filters: [{ key: "area_type", label: "area type" }],
   columns: [
     { key: "location_id", label: "ID" },
     { key: "location_name", label: "Location" },
@@ -24,5 +26,10 @@ const Locations = createCrudView({
       type: "select",
       options: AREA_TYPES.map((t) => ({ value: t, label: t }))
     }
-  ]
+  ],
+  beforeSubmit: (data) => ({
+    location_name: data.location_name.trim(),
+    building_block: data.building_block.trim(),
+    area_type: data.area_type
+  })
 });
